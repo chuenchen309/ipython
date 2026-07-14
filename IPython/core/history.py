@@ -16,10 +16,10 @@ import weakref
 import threading
 from pathlib import Path
 
+import functools
 from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
-from decorator import decorator
 from traitlets import (
     Any,
     Bool,
@@ -99,13 +99,17 @@ class DummyDB:
         pass
 
 
-@decorator
-def only_when_enabled(f, self, *a, **kw):  # type: ignore [no-untyped-def]
+def only_when_enabled(f):  # type: ignore [no-untyped-def]
     """Decorator: return an empty list in the absence of sqlite."""
-    if not self.enabled:
-        return []
-    else:
-        return f(self, *a, **kw)
+
+    @functools.wraps(f)
+    def wrapper(self, *a, **kw):  # type: ignore [no-untyped-def]
+        if not self.enabled:
+            return []
+        else:
+            return f(self, *a, **kw)
+
+    return wrapper
 
 
 # use 16kB as threshold for whether a corrupt history db should be saved
@@ -113,8 +117,7 @@ def only_when_enabled(f, self, *a, **kw):  # type: ignore [no-untyped-def]
 _SAVE_DB_SIZE = 16384
 
 
-@decorator
-def catch_corrupt_db(f, self, *a, **kw):  # type: ignore [no-untyped-def]
+def catch_corrupt_db(f):  # type: ignore [no-untyped-def]
     """A decorator which wraps HistoryAccessor method calls to catch errors from
     a corrupt SQLite database, move the old database out of the way, and create
     a new one.
@@ -122,49 +125,54 @@ def catch_corrupt_db(f, self, *a, **kw):  # type: ignore [no-untyped-def]
     We avoid clobbering larger databases because this may be triggered due to filesystem issues,
     not just a corrupt file.
     """
-    try:
-        return f(self, *a, **kw)
-    except (DatabaseError, OperationalError) as e:
-        self._corrupt_db_counter += 1
-        self.log.error("Failed to open SQLite history %s (%s).", self.hist_file, e)
-        if self.hist_file != ":memory:":
-            if self._corrupt_db_counter > self._corrupt_db_limit:
-                self.hist_file = ":memory:"
-                self.log.error(
-                    "Failed to load history too many times, history will not be saved."
-                )
-            elif self.hist_file.is_file():
-                # move the file out of the way
-                base = str(self.hist_file.parent / self.hist_file.stem)
-                ext = self.hist_file.suffix
-                size = self.hist_file.stat().st_size
-                if size >= _SAVE_DB_SIZE:
-                    # if there's significant content, avoid clobbering
-                    now = (
-                        datetime.datetime.now(datetime.UTC)
-                        .isoformat()
-                        .replace(":", ".")
+
+    @functools.wraps(f)
+    def wrapper(self, *a, **kw):  # type: ignore [no-untyped-def]
+        try:
+            return f(self, *a, **kw)
+        except (DatabaseError, OperationalError) as e:
+            self._corrupt_db_counter += 1
+            self.log.error("Failed to open SQLite history %s (%s).", self.hist_file, e)
+            if self.hist_file != ":memory:":
+                if self._corrupt_db_counter > self._corrupt_db_limit:
+                    self.hist_file = ":memory:"
+                    self.log.error(
+                        "Failed to load history too many times, history will not be saved."
                     )
-                    newpath = base + "-corrupt-" + now + ext
-                    # don't clobber previous corrupt backups
-                    for i in range(100):
-                        if not Path(newpath).exists():
-                            break
-                        else:
-                            newpath = base + "-corrupt-" + now + ("-%i" % i) + ext
-                else:
-                    # not much content, possibly empty; don't worry about clobbering
-                    # maybe we should just delete it?
-                    newpath = base + "-corrupt" + ext
-                self.hist_file.rename(newpath)
-                self.log.error(
-                    "History file was moved to %s and a new file created.", newpath
-                )
-            self.init_db()
-            return []
-        else:
-            # Failed with :memory:, something serious is wrong
-            raise
+                elif self.hist_file.is_file():
+                    # move the file out of the way
+                    base = str(self.hist_file.parent / self.hist_file.stem)
+                    ext = self.hist_file.suffix
+                    size = self.hist_file.stat().st_size
+                    if size >= _SAVE_DB_SIZE:
+                        # if there's significant content, avoid clobbering
+                        now = (
+                            datetime.datetime.now(datetime.UTC)
+                            .isoformat()
+                            .replace(":", ".")
+                        )
+                        newpath = base + "-corrupt-" + now + ext
+                        # don't clobber previous corrupt backups
+                        for i in range(100):
+                            if not Path(newpath).exists():
+                                break
+                            else:
+                                newpath = base + "-corrupt-" + now + ("-%i" % i) + ext
+                    else:
+                        # not much content, possibly empty; don't worry about clobbering
+                        # maybe we should just delete it?
+                        newpath = base + "-corrupt" + ext
+                    self.hist_file.rename(newpath)
+                    self.log.error(
+                        "History file was moved to %s and a new file created.", newpath
+                    )
+                self.init_db()
+                return []
+            else:
+                # Failed with :memory:, something serious is wrong
+                raise
+
+    return wrapper
 
 
 class HistoryAccessorBase(LoggingConfigurable):
