@@ -109,15 +109,19 @@ addressed in that batch; everything else is recorded here for later triage.
   per-instance, size-bounded caches cleared on each `interaction`.
 - Bounded the unbounded `count_lines_in_py_file` lru_cache in `tbtools.py`.
 
+- **Lazy top-level attributes**: `IPython/__init__.py` eagerly imported
+  `IPython.terminal.embed` (for `IPython.embed`), `InteractiveShell` and
+  `Application`, pulling the whole shell and terminal stack (prompt_toolkit
+  and friends) into every `import IPython`. These are now PEP 562 lazy
+  attributes; `import IPython` measured warm went from ~277ms (post
+  lazy-jedi) to **~17ms**. This also surfaced and fixed a latent import cycle
+  (`terminal/debugger` → `terminal/embed` → `terminal/interactiveshell` →
+  `terminal/debugger`) that had been masked by the root package's import
+  order. Caveat for downstreams: `import IPython` no longer transitively
+  imports the shell machinery as a side effect.
+
 ### Investigated, deliberately not changed
 
-- **`IPython/__init__.py` eagerly imports `IPython.terminal.embed`** (to expose
-  `IPython.embed`), which pulls the whole terminal stack — prompt_toolkit
-  (~56ms warm) and friends — into every `import IPython`, including library
-  consumers that never start a shell. Converting `embed` (and possibly
-  `start_ipython`/`get_ipython` helpers) to a module-level `__getattr__` lazy
-  import is the next big startup win (~100ms+ warm), but it changes
-  import-time side effects and deserves its own PR and discussion.
 - **`history.py` `db_cache_size` default of 0** flags the background save
   thread after every command → one sqlite transaction per cell (off the main
   thread, so latency is unaffected). Raising the default (e.g. 8–16) would cut

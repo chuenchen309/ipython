@@ -21,23 +21,49 @@ https://ipython.org
 
 import sys
 import warnings
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 #-----------------------------------------------------------------------------
 # Setup everything
 #-----------------------------------------------------------------------------
 
-# Don't forget to also update setup.py when this changes!
 from .core.getipython import get_ipython
 from .core import release
-from .core.application import Application
-from .terminal.embed import embed
-
-from .core.interactiveshell import InteractiveShell
 from .utils.sysinfo import sys_info
 from .utils.frame import extract_module_locals
 
+if TYPE_CHECKING:
+    from .core.application import Application
+    from .core.interactiveshell import InteractiveShell
+    from .terminal.embed import embed
+
 __all__ = ["start_ipython", "embed", "embed_kernel"]
+
+# Attributes imported lazily on first access (PEP 562). Importing these
+# eagerly would pull the whole shell machinery — including the terminal stack
+# and prompt_toolkit for `embed` — into every `import IPython`, which is a
+# significant startup cost for programs that only use IPython as a library.
+_LAZY_IMPORTS = {
+    "Application": ".core.application",
+    "InteractiveShell": ".core.interactiveshell",
+    "embed": ".terminal.embed",
+}
+
+
+def __getattr__(name: str) -> Any:
+    source_module = _LAZY_IMPORTS.get(name)
+    if source_module is not None:
+        from importlib import import_module
+
+        value = getattr(import_module(source_module, __name__), name)
+        # cache it so __getattr__ only fires once per name
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(_LAZY_IMPORTS))
 
 # Release data
 __author__ = '{} <{}>'.format(release.author, release.author_email)
