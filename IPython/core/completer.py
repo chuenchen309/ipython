@@ -96,8 +96,9 @@ having to execute any code:
    ... myvar[1].bi<tab>
 
 Tab completion will be able to infer that ``myvar[1]`` is a real number without
-executing almost any code unlike the deprecated :any:`IPCompleter.greedy`
-option.
+executing almost any code, unlike the removed ``IPCompleter.greedy`` option
+(use :std:configtrait:`Completer.evaluation` and
+:std:configtrait:`Completer.auto_close_dict_keys` instead).
 
 Be sure to update :mod:`jedi` to the latest stable version or to try the
 current development version to get better completions.
@@ -118,7 +119,7 @@ The built-in matchers include:
 - :any:`back_unicode_name_matcher` and :any:`back_latex_name_matcher`: see `Backward latex completion`_,
 - :any:`IPCompleter.file_matcher`: paths to files and directories,
 - :any:`IPCompleter.python_func_kw_matcher` - function keywords,
-- :any:`IPCompleter.python_matches` - globals and attributes (v1 API),
+- :any:`IPCompleter.python_matcher` - globals and attributes,
 - ``IPCompleter.jedi_matcher`` - static analysis with Jedi,
 - :any:`IPCompleter.custom_completer_matcher` - pluggable completer with a default
   implementation in :any:`InteractiveShell` which uses IPython hooks system
@@ -258,7 +259,7 @@ JEDI_INSTALLED = importlib.util.find_spec("jedi") is not None
 
 
 @lru_cache(maxsize=1)
-def _get_jedi() -> "ModuleType":
+def _get_jedi() -> ModuleType:
     """Import, configure, and return the ``jedi`` module (cached)."""
     import jedi
     import jedi.api.classes
@@ -635,7 +636,7 @@ class CompletionContext:
     #: Relevant fragment of code directly preceding the cursor.
     #: The extraction of token is implemented via splitter heuristic
     #: (following readline behaviour for legacy reasons), which is user configurable
-    #: (by switching the greedy mode).
+    #: (by changing the splitter delimiters).
     token: str
 
     #: The full available content of the editor or buffer
@@ -966,20 +967,6 @@ class CompletionSplitter:
 
 class Completer(Configurable):
 
-    greedy = Bool(
-        False,
-        help="""Activate greedy completion.
-
-        .. deprecated:: 8.8
-            Use :std:configtrait:`Completer.evaluation` and :std:configtrait:`Completer.auto_close_dict_keys` instead.
-
-        When enabled in IPython 8.8 or newer, changes configuration as follows:
-
-        - ``Completer.evaluation = 'unsafe'``
-        - ``Completer.auto_close_dict_keys = True``
-        """,
-    ).tag(config=True)
-
     evaluation = Enum(
         ("forbidden", "minimal", "limited", "unsafe", "dangerous"),
         default_value="limited",
@@ -1291,10 +1278,7 @@ class Completer(Configurable):
             if obj is not_found:
                 return [], ""
 
-        if self.limit_to__all__ and hasattr(obj, '__all__'):
-            words = get__all__entries(obj)
-        else:
-            words = dir2(obj)
+        words = dir2(obj)
 
         try:
             words = generics.complete_object(obj, words)
@@ -1952,18 +1936,6 @@ def _convert_matcher_v1_result_to_v2(
 class IPCompleter(Completer):
     """Extension of the completer class with IPython-specific features"""
 
-    @observe('greedy')
-    def _greedy_changed(self, change):
-        """update the splitter and readline delims when greedy is changed"""
-        if change["new"]:
-            self.evaluation = "unsafe"
-            self.auto_close_dict_keys = True
-            self.splitter.delims = GREEDY_DELIMS
-        else:
-            self.evaluation = "limited"
-            self.auto_close_dict_keys = False
-            self.splitter.delims = DELIMS
-
     dict_keys_only = Bool(
         False,
         help="""
@@ -2032,20 +2004,6 @@ class IPCompleter(Completer):
         When 0: nothing will be excluded.
         """
     ).tag(config=True)
-    limit_to__all__ = Bool(False,
-        help="""
-        DEPRECATED as of version 5.0.
-
-        Instruct the completer to use __all__ for the completion
-
-        Specifically, when completing on ``object.<tab>``.
-
-        When True: only those names in obj.__all__ will be included.
-
-        When False [default]: the __all__ attribute is ignored
-        """,
-    ).tag(config=True)
-
     profile_completions = Bool(
         default_value=False,
         help="If True, emit profiling data for completion subsystem using cProfile."
@@ -2055,13 +2013,6 @@ class IPCompleter(Completer):
         default_value=".completion_profiles",
         help="Template for path at which to output profile data for completions."
     ).tag(config=True)
-
-    @observe('limit_to__all__')
-    def _limit_to_all_changed(self, change):
-        warnings.warn('`IPython.core.IPCompleter.limit_to__all__` configuration '
-            'value has been deprecated since IPython 5.0, will be made to have '
-            'no effects and then removed in future version of IPython.',
-            UserWarning)
 
     def __init__(
         self, shell=None, namespace=None, global_namespace=None, config=None, **kwargs
@@ -2091,7 +2042,6 @@ class IPCompleter(Completer):
         self.magic_escape = ESC_MAGIC
         self.splitter = CompletionSplitter()
 
-        # _greedy_changed() depends on splitter and readline being defined:
         super().__init__(
             namespace=namespace,
             global_namespace=global_namespace,
@@ -2820,32 +2770,6 @@ class IPCompleter(Completer):
                 ],
                 suppress=False,
             )
-
-    @completion_matcher(api_version=1)
-    def python_matches(self, text: str) -> Iterable[str]:
-        """Match attributes or global python names.
-
-        .. deprecated:: 8.27
-            You can use :meth:`python_matcher` instead."""
-        if "." in text:
-            try:
-                matches = self.attr_matches(text)
-                if text.endswith('.') and self.omit__names:
-                    if self.omit__names == 1:
-                        # true if txt is _not_ a __ name, false otherwise:
-                        no__name = (lambda txt:
-                                    re.match(r'.*\.__.*?__',txt) is None)
-                    else:
-                        # true if txt is _not_ a _ name, false otherwise:
-                        no__name = (lambda txt:
-                                    re.match(r'\._.*?',txt[txt.rindex('.'):]) is None)
-                    matches = filter(no__name, matches)
-            except NameError:
-                # catches <undefined attributes>.<tab>
-                matches = []
-        else:
-            matches = self.global_matches(text)
-        return matches
 
     def _default_arguments_from_docstring(self, doc):
         """Parse the first line of docstring for call signature.
