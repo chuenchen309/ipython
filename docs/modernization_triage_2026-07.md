@@ -109,16 +109,20 @@ addressed in that batch; everything else is recorded here for later triage.
   per-instance, size-bounded caches cleared on each `interaction`.
 - Bounded the unbounded `count_lines_in_py_file` lru_cache in `tbtools.py`.
 
-- **Lazy top-level attributes**: `IPython/__init__.py` eagerly imported
-  `IPython.terminal.embed` (for `IPython.embed`), `InteractiveShell` and
-  `Application`, pulling the whole shell and terminal stack (prompt_toolkit
-  and friends) into every `import IPython`. These are now PEP 562 lazy
-  attributes; `import IPython` measured warm went from ~277ms (post
-  lazy-jedi) to **~17ms**. This also surfaced and fixed a latent import cycle
-  (`terminal/debugger` → `terminal/embed` → `terminal/interactiveshell` →
-  `terminal/debugger`) that had been masked by the root package's import
-  order. Caveat for downstreams: `import IPython` no longer transitively
-  imports the shell machinery as a side effect.
+- **Lazy top-level attributes — attempted, then reverted.** Making
+  `IPython.embed`/`InteractiveShell`/`Application` PEP 562 lazy attributes
+  took `import IPython` from ~277ms (post lazy-jedi) to ~17ms warm, but broke
+  pyflyby in the downstream CI: after a bare `import IPython`, its
+  `_interactive.py` accesses `IPython.terminal.ipapp.TerminalIPythonApp` and
+  `IPython.core.application.BaseIPythonApplication`, attribute chains that
+  only resolve via the eager imports' side effects (and its `except
+  AttributeError` turns this into a hard RuntimeError). The change was
+  reverted; a patch making pyflyby import those submodules explicitly was
+  prepared for upstream. Once that (and a survey of similar patterns in other
+  downstreams) lands, the lazification is worth retrying — the attempt did
+  leave behind a fix for a latent import cycle (`terminal/debugger` →
+  `terminal/embed` → `terminal/interactiveshell` → `terminal/debugger`) that
+  the root package's import order had been masking, which was kept.
 
 ### Investigated, deliberately not changed
 

@@ -21,49 +21,27 @@ https://ipython.org
 
 import sys
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 #-----------------------------------------------------------------------------
 # Setup everything
 #-----------------------------------------------------------------------------
 
+# NOTE: these imports look like they could be made lazy (PEP 562) to speed up
+# `import IPython` considerably, but downstream projects (pyflyby at least)
+# rely on the transitive side effects: they do `import IPython` and then
+# access attribute chains like `IPython.terminal.ipapp.TerminalIPythonApp`,
+# which only resolve because the imports below load those submodules.
 from .core.getipython import get_ipython
 from .core import release
+from .core.application import Application
+from .terminal.embed import embed
+
+from .core.interactiveshell import InteractiveShell
 from .utils.sysinfo import sys_info
 from .utils.frame import extract_module_locals
 
-if TYPE_CHECKING:
-    from .core.application import Application
-    from .core.interactiveshell import InteractiveShell
-    from .terminal.embed import embed
-
 __all__ = ["start_ipython", "embed", "embed_kernel"]
-
-# Attributes imported lazily on first access (PEP 562). Importing these
-# eagerly would pull the whole shell machinery — including the terminal stack
-# and prompt_toolkit for `embed` — into every `import IPython`, which is a
-# significant startup cost for programs that only use IPython as a library.
-_LAZY_IMPORTS = {
-    "Application": ".core.application",
-    "InteractiveShell": ".core.interactiveshell",
-    "embed": ".terminal.embed",
-}
-
-
-def __getattr__(name: str) -> Any:
-    source_module = _LAZY_IMPORTS.get(name)
-    if source_module is not None:
-        from importlib import import_module
-
-        value = getattr(import_module(source_module, __name__), name)
-        # cache it so __getattr__ only fires once per name
-        globals()[name] = value
-        return value
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-def __dir__() -> list[str]:
-    return sorted(set(globals()) | set(_LAZY_IMPORTS))
 
 # Release data
 __author__ = '{} <{}>'.format(release.author, release.author_email)
