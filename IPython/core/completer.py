@@ -96,9 +96,8 @@ having to execute any code:
    ... myvar[1].bi<tab>
 
 Tab completion will be able to infer that ``myvar[1]`` is a real number without
-executing almost any code, unlike the removed ``IPCompleter.greedy`` option
-(use :std:configtrait:`Completer.evaluation` and
-:std:configtrait:`Completer.auto_close_dict_keys` instead).
+executing almost any code unlike the deprecated :any:`IPCompleter.greedy`
+option.
 
 Be sure to update :mod:`jedi` to the latest stable version or to try the
 current development version to get better completions.
@@ -636,7 +635,7 @@ class CompletionContext:
     #: Relevant fragment of code directly preceding the cursor.
     #: The extraction of token is implemented via splitter heuristic
     #: (following readline behaviour for legacy reasons), which is user configurable
-    #: (by changing the splitter delimiters).
+    #: (by switching the greedy mode).
     token: str
 
     #: The full available content of the editor or buffer
@@ -966,6 +965,23 @@ class CompletionSplitter:
 
 
 class Completer(Configurable):
+
+    greedy = Bool(
+        False,
+        help="""Activate greedy completion.
+
+        .. deprecated:: 8.8
+            Use :std:configtrait:`Completer.evaluation` and :std:configtrait:`Completer.auto_close_dict_keys` instead.
+
+        When enabled in IPython 8.8 or newer, changes configuration as follows:
+
+        - ``Completer.evaluation = 'unsafe'``
+        - ``Completer.auto_close_dict_keys = True``
+
+        Kept (deprecated, not yet removed) because downstream projects'
+        test suites still set it via ``%config``.
+        """,
+    ).tag(config=True)
 
     evaluation = Enum(
         ("forbidden", "minimal", "limited", "unsafe", "dangerous"),
@@ -1936,6 +1952,18 @@ def _convert_matcher_v1_result_to_v2(
 class IPCompleter(Completer):
     """Extension of the completer class with IPython-specific features"""
 
+    @observe("greedy")
+    def _greedy_changed(self, change):
+        """update the splitter and readline delims when greedy is changed"""
+        if change["new"]:
+            self.evaluation = "unsafe"
+            self.auto_close_dict_keys = True
+            self.splitter.delims = GREEDY_DELIMS
+        else:
+            self.evaluation = "limited"
+            self.auto_close_dict_keys = False
+            self.splitter.delims = DELIMS
+
     dict_keys_only = Bool(
         False,
         help="""
@@ -2042,6 +2070,7 @@ class IPCompleter(Completer):
         self.magic_escape = ESC_MAGIC
         self.splitter = CompletionSplitter()
 
+        # _greedy_changed() depends on splitter and readline being defined:
         super().__init__(
             namespace=namespace,
             global_namespace=global_namespace,

@@ -7,9 +7,6 @@ have been removed:
 - ``IPCompleter.limit_to__all__`` configuration option (deprecated since
   IPython 5.0). Completion on ``object.<tab>`` now always uses ``dir()``-based
   discovery, regardless of ``__all__``.
-- ``Completer.greedy`` configuration option (deprecated since IPython 8.8).
-  Use :std:configtrait:`Completer.evaluation` (e.g. set to ``'unsafe'``) and
-  :std:configtrait:`Completer.auto_close_dict_keys` instead.
 - ``IPCompleter.python_matches`` method (deprecated since IPython 8.27). Use
   ``IPCompleter.python_matcher`` instead.
 - ``OInfo.get()`` (deprecated since IPython 8.13, added only as a transitional

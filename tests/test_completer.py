@@ -25,7 +25,6 @@ from IPython.core.latex_symbols import latex_symbols
 
 from IPython.core.completer import (
     Completion,
-    GREEDY_DELIMS,
     provisionalcompleter,
     match_dict_keys,
     _deduplicate_completions,
@@ -132,25 +131,13 @@ def test_unicode_range():
 
 @contextmanager
 def greedy_completion():
-    """Enable what the removed ``IPCompleter.greedy`` option used to enable."""
     ip = get_ipython()
-    completer = ip.Completer
-    original = (
-        completer.evaluation,
-        completer.auto_close_dict_keys,
-        completer.splitter.delims,
-    )
+    greedy_original = ip.Completer.greedy
     try:
-        completer.evaluation = "unsafe"
-        completer.auto_close_dict_keys = True
-        completer.splitter.delims = GREEDY_DELIMS
+        ip.Completer.greedy = True
         yield
     finally:
-        (
-            completer.evaluation,
-            completer.auto_close_dict_keys,
-            completer.splitter.delims,
-        ) = original
+        ip.Completer.greedy = greedy_original
 
 
 @contextmanager

@@ -11,7 +11,6 @@ addressed in that batch; everything else is recorded here for later triage.
 | Item | Deprecated in |
 |---|---|
 | `IPCompleter.limit_to__all__` trait | 5.0 |
-| `Completer.greedy` trait | 8.8 |
 | `IPCompleter.python_matches` | 8.27 |
 | `OInfo.get()` | 8.13 |
 | `pylabtools.backends` / `backend2gui` module `__getattr__` | 8.24 |
@@ -19,6 +18,12 @@ addressed in that batch; everything else is recorded here for later triage.
 
 ### Deliberately kept
 
+- **`Completer.greedy` trait** (deprecated 8.8): removal was attempted in this
+  batch but reverted — pyflyby's test suite (run in this repo's downstream CI)
+  still sets `%config IPCompleter.greedy=True`, and removing the trait makes
+  traitlets print "Config option not recognized", breaking their
+  expected-output tests. Remove once pyflyby (and likely others) migrate to
+  `Completer.evaluation`/`auto_close_dict_keys`.
 - **Matcher-v1 `.. deprecated:: 8.6` methods** (`magic_config_matches`,
   `python_func_kw_matches`, `dict_key_matches`, `dispatch_custom_completer` in
   `IPython/core/completer.py`): they are the implementations that their v2
